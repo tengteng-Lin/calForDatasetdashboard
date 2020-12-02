@@ -42,11 +42,14 @@ public class ToolGuy {
     }
 
     public void getNamespace(int table_id,int dataset_local_id){
+        getTypeID(table_id,dataset_local_id);
+
+        HashMap<String,String> vocab2prefix = new HashMap<>();
 
 
 
-        //TODO  sql语句需要特殊处理
-        String selectLabel = String.format("select * from uri_label_id%d where dataset_local_id = %d",table_id,dataset_local_id);
+
+        String selectLabel = String.format("select * from uri_label_id%d where dataset_local_id = %d AND uri LIKE '%s' AND is_literal=0 AND id not in (select object FROM triple%d WHERE dataset_local_id=%d AND predicate != %d) ORDER BY uri",table_id,dataset_local_id,"http%",table_id,dataset_local_id,typeID);
 
         try {
             FileModel.CreateFolder("D:\\Index\\Namespace\\"+dataset_local_id);
@@ -62,30 +65,65 @@ public class ToolGuy {
 
 
 
+            //TODO  没处理default
             int idx = 0;//namespace标号
-            String lastURI = resultSet.getString("uri");
-            while (resultSet.next()){
-                Document doc = new Document();
+            String lastURI = "";
 
+            if(resultSet.next()){
+                String uri = resultSet.getString("uri");
+                System.out.println("uri:"+uri);
+                String label = resultSet.getString("label");
+                lastURI = getUriPre(uri,label);
+            }
+
+
+            while (resultSet.next()){
                 int id = resultSet.getInt("id");
                 String label = resultSet.getString("label");
                 String uri = resultSet.getString("uri");
                 int is_literal = resultSet.getInt("is_literal");
 
-                if(uri.equals(lastURI)) continue;
+
+                //先去除label，获取前半段
+                String uriPre = getUriPre(uri,label);
+                if(uriPre.equals(lastURI)) continue;
                 else{
-                    //TODO 生成document
-                    doc.add(new TextField("prefix","需要hhhhhh", Field.Store.YES));
-                    doc.add(new TextField("vocabulary","ruehhdahsaszx", Field.Store.YES));
+                    if(!vocab2prefix.containsKey(uriPre)) {
+                        //获取缩写
+                        vocab2prefix.put(uriPre,"ns"+idx);
+                        //加入
+                        idx++;
 
-                    indexWriter.addDocument(doc);
-                    indexWriter.commit();
-
-
+                    }
+                    lastURI = uriPre;
                 }
+            }
+
+            //处理最后一个
+            if(!vocab2prefix.containsKey(lastURI)) {
+                //获取缩写
+                vocab2prefix.put(lastURI,"ns"+idx);
 
 
             }
+
+            System.out.println("prefix\tvocabulary");
+            /**建索引**/
+            for(String vocab : vocab2prefix.keySet()){
+                System.out.println(vocab2prefix.get(vocab)+"\t"+vocab);
+//                System.out.println("vocabulary");
+//                System.out.println("===================================================================================");
+
+//                Document doc = new Document();
+//                doc.add(new TextField("prefix",vocab2prefix.get(vocab), Field.Store.YES));
+//                doc.add(new TextField("vocabulary",vocab, Field.Store.YES));
+//
+//                indexWriter.addDocument(doc);
+            }
+            /***/
+
+
+//            indexWriter.commit();
 
             indexWriter.close();
             dir.close();
@@ -96,6 +134,13 @@ public class ToolGuy {
 
 
 
+
+    }
+
+    private String getUriPre(String uri,String label){
+        String one = uri.replace(label,"");
+
+        return one.substring(0,one.length()-1);
 
     }
 
@@ -236,6 +281,42 @@ public class ToolGuy {
                 if (litr){ //是literal
                     literal.add(id);
                 }
+            }
+            /**labelID建完*/
+            resultSet.close();
+            selectStatement.close();
+
+//            connection.close();
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+
+    }
+
+    public void getTypeID(int table_id,int dataset_local_id){
+
+
+
+
+        String selectLabel = String.format("select * from uri_label_id%d where dataset_local_id = %d",table_id,dataset_local_id);
+
+        try {
+            PreparedStatement selectStatement = connection_remote.prepareStatement(selectLabel);
+            ResultSet resultSet = selectStatement.executeQuery();
+
+
+            while (resultSet.next()){
+                int id = resultSet.getInt("id");
+                String label = resultSet.getString("label");
+
+
+
+                if("type".equals(label)){
+                    typeID = id;
+                    return;
+                }
+
+
             }
             /**labelID建完*/
             resultSet.close();
