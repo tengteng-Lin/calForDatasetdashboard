@@ -6,6 +6,8 @@ package Utils;
 //import org.apache.lucene.analysis.en.EnglishAnalyzer;
 //import org.apache.lucene.index.IndexOptions;
 
+import net.sf.json.JSONObject;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.*;
@@ -32,6 +34,13 @@ public class GlobalVariances {
     /**for database**/
     public static int LOCAL = 0;
     public static int REMOTE = 1;
+
+    public static JSONObject getParseMatch()
+    {
+
+        JSONObject parseMatch = Tools.readJson("defaultRDF.json");
+        return parseMatch;
+    }
 
     public static Set<String> getStopWords()
     {
