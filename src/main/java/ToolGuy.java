@@ -6,6 +6,7 @@ import net.sf.json.JSONObject;
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -52,8 +53,8 @@ public class ToolGuy {
         String selectLabel = String.format("select * from uri_label_id%d where dataset_local_id = %d AND uri LIKE '%s' AND is_literal=0 AND id not in (select object FROM triple%d WHERE dataset_local_id=%d AND predicate != %d) ORDER BY uri",table_id,dataset_local_id,"http%",table_id,dataset_local_id,typeID);
 
         try {
-            FileModel.CreateFolder("D:\\Index\\Namespace\\"+dataset_local_id);
-            Directory dir = MMapDirectory.open(Paths.get("D:\\Index\\Namespace\\"+dataset_local_id));//会变的，一个dataset一个文件夹，因为是一个group一个document！！
+            FileModel.CreateFolder("D:\\Index\\Namespace\\"+table_id+"\\"+dataset_local_id);
+            Directory dir = MMapDirectory.open(Paths.get("D:\\Index\\Namespace\\"+table_id+"\\"+dataset_local_id));//会变的，一个dataset一个文件夹，因为是一个group一个document！！
             IndexWriterConfig config = new IndexWriterConfig(new WhitespaceAnalyzer());
             config.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
             config.setMaxBufferedDocs(100);
@@ -65,13 +66,13 @@ public class ToolGuy {
 
 
 
-            //TODO  没处理default
+
             int idx = 0;//namespace标号
             String lastURI = "";
 
             if(resultSet.next()){
                 String uri = resultSet.getString("uri");
-                System.out.println("uri:"+uri);
+//                System.out.println("uri:"+uri);
                 String label = resultSet.getString("label");
                 lastURI = getUriPre(uri,label);
             }
@@ -82,17 +83,27 @@ public class ToolGuy {
                 String label = resultSet.getString("label");
                 String uri = resultSet.getString("uri");
                 int is_literal = resultSet.getInt("is_literal");
-
+//                System.out.println("uri:"+uri);
 
                 //先去除label，获取前半段
                 String uriPre = getUriPre(uri,label);
+
                 if(uriPre.equals(lastURI)) continue;
                 else{
-                    if(!vocab2prefix.containsKey(uriPre)) {
+                    if(!vocab2prefix.containsKey(lastURI)) {
+                        String defaultPre = getDefaultPrefix(lastURI);
+
                         //获取缩写
-                        vocab2prefix.put(uriPre,"ns"+idx);
-                        //加入
-                        idx++;
+                        if("".equals(defaultPre)){
+                            vocab2prefix.put(lastURI,"ns"+idx);
+                            idx++;
+
+                        }else{
+                            vocab2prefix.put(lastURI,defaultPre);
+                        }
+
+
+
 
                     }
                     lastURI = uriPre;
@@ -102,28 +113,36 @@ public class ToolGuy {
             //处理最后一个
             if(!vocab2prefix.containsKey(lastURI)) {
                 //获取缩写
-                vocab2prefix.put(lastURI,"ns"+idx);
+                String defaultPre = getDefaultPrefix(lastURI);
+
+                //获取缩写
+                if("".equals(defaultPre)){
+                    vocab2prefix.put(lastURI,"ns"+idx);
+                    idx++;
+
+                }else{
+                    vocab2prefix.put(lastURI,defaultPre);
+                }
 
 
             }
 
-            System.out.println("prefix\tvocabulary");
+//            System.out.println("prefix\tvocabulary");
             /**建索引**/
             for(String vocab : vocab2prefix.keySet()){
-                System.out.println(vocab2prefix.get(vocab)+"\t"+vocab);
-//                System.out.println("vocabulary");
-//                System.out.println("===================================================================================");
+//                System.out.println(vocab2prefix.get(vocab)+"\t"+vocab);
 
-//                Document doc = new Document();
-//                doc.add(new TextField("prefix",vocab2prefix.get(vocab), Field.Store.YES));
-//                doc.add(new TextField("vocabulary",vocab, Field.Store.YES));
-//
-//                indexWriter.addDocument(doc);
+
+                Document doc = new Document();
+                doc.add(new StringField("prefix",vocab2prefix.get(vocab), Field.Store.YES));
+                doc.add(new StringField("vocabulary",vocab, Field.Store.YES));
+
+                indexWriter.addDocument(doc);
             }
             /***/
 
 
-//            indexWriter.commit();
+            indexWriter.commit();
 
             indexWriter.close();
             dir.close();
@@ -140,7 +159,7 @@ public class ToolGuy {
     private String getUriPre(String uri,String label){
         String one = uri.replace(label,"");
 
-        return one.substring(0,one.length()-1);
+        return one;
 
     }
 
