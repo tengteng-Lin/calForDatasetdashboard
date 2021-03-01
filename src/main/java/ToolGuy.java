@@ -11,6 +11,7 @@ import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.MMapDirectory;
 
 import java.io.File;
@@ -19,6 +20,7 @@ import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.*;
 
 public class ToolGuy {
@@ -30,31 +32,89 @@ public class ToolGuy {
 
     List<Default> database_info;
 
+    Map<Integer,Integer> datasetID2maxDegreeNodeID;
+
 
 
     public ToolGuy() {
+        getDefaultList();
         this.connection_remote = JdbcUtil.getConnection(GlobalVariances.REMOTE);
         this.connection_local = JdbcUtil.getConnection(GlobalVariances.LOCAL);
+        datasetID2maxDegreeNodeID = new HashMap<>();
         literal = new HashSet<>();
         typeID = -1;
 
         database_info = new ArrayList<>(); database_info.clear();
-        getDefaultList();
+//        getDefaultList();
     }
 
-    public void getNamespace(int table_id,int dataset_local_id){
-        getTypeID(table_id,dataset_local_id);
+    public void getMaxOutdegreeNode(int table_id,int dataset_local_id){
+        datasetID2maxDegreeNodeID.clear();
+        String sql = String.format("SELECT * FROM triple%d WHERE dataset_local_id=%d;",table_id,dataset_local_id);
+
+        try{
+            Statement stmt = connection_remote.createStatement();
+            ResultSet rst = stmt.executeQuery(sql);
+
+            while(rst.next()){
+                int sub = rst.getInt("subject");
+                int pre = rst.getInt("predicate");
+                int obj = rst.getInt("object");
+
+                if(datasetID2maxDegreeNodeID.containsKey(sub)){
+                    datasetID2maxDegreeNodeID.put(sub,datasetID2maxDegreeNodeID.get(sub)+1);
+                }else{
+                    datasetID2maxDegreeNodeID.put(sub,1);
+                }
+            }
+            List<Map.Entry<Integer, Integer>> infoIds = new ArrayList<Map.Entry<Integer,Integer>>(datasetID2maxDegreeNodeID.entrySet());
+            Collections.sort(infoIds, new Comparator<Map.Entry<Integer, Integer>>() {
+                public int compare(Map.Entry<Integer, Integer> o1, Map.Entry<Integer, Integer> o2) {
+                    return (o2.getValue() - o1.getValue());
+                    //return (o1.getKey()).toString().compareTo(o2.getKey());
+                }
+            });
+
+
+            String insert = String.format("INSERT INTO datasetid2maxdegreenodeid%d(dataset_local_id,maxOutdegreeNodeID) values (?,?);",table_id);
+            PreparedStatement pstmt=connection_local.prepareStatement(insert);
+            pstmt.setInt(1,dataset_local_id);
+            pstmt.setInt(2,infoIds.get(0).getKey());
+            pstmt.executeUpdate();
+
+            pstmt.close();
+            rst.close();
+            stmt.close();
+
+
+
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+
+    }
+
+
+
+    public void getNamespace(int dataset_local_id){
+        int table_id = 2;
+        if(dataset_local_id>311){
+            table_id=3;
+            dataset_local_id-=311;
+        }
+
+//        getTypeID(table_id,dataset_local_id);
 
         HashMap<String,String> vocab2prefix = new HashMap<>();
 
 
 
 
-        String selectLabel = String.format("select * from uri_label_id%d where dataset_local_id = %d AND uri LIKE '%s' AND is_literal=0 AND id not in (select object FROM triple%d WHERE dataset_local_id=%d AND predicate != %d) ORDER BY uri",table_id,dataset_local_id,"http%",table_id,dataset_local_id,typeID);
+        String selectLabel = String.format("select * from uri_label_id%d where dataset_local_id = %d AND uri LIKE '%s' AND is_literal=0",table_id,dataset_local_id,"http%");
 
         try {
-            FileModel.CreateFolder("D:\\Index\\Namespace\\"+table_id+"\\"+dataset_local_id);
-            Directory dir = MMapDirectory.open(Paths.get("D:\\Index\\Namespace\\"+table_id+"\\"+dataset_local_id));//会变的，一个dataset一个文件夹，因为是一个group一个document！！
+            FileModel.CreateFolder("D:\\Index\\Namespace2\\"+dataset_local_id);
+            Directory dir = FSDirectory.open(Paths.get("D:\\Index\\Namespace2\\"+dataset_local_id));//会变的，一个dataset一个文件夹，因为是一个group一个document！！
             IndexWriterConfig config = new IndexWriterConfig(new WhitespaceAnalyzer());
             config.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
             config.setMaxBufferedDocs(100);
@@ -73,14 +133,14 @@ public class ToolGuy {
             if(resultSet.next()){
                 String uri = resultSet.getString("uri");
 //                System.out.println("uri:"+uri);
-                String label = resultSet.getString("label");
+                String label = resultSet.getString("label")==null?"":resultSet.getString("label");
                 lastURI = getUriPre(uri,label);
             }
 
 
             while (resultSet.next()){
                 int id = resultSet.getInt("id");
-                String label = resultSet.getString("label");
+                String label = resultSet.getString("label")==null?"":resultSet.getString("label");
                 String uri = resultSet.getString("uri");
                 int is_literal = resultSet.getInt("is_literal");
 //                System.out.println("uri:"+uri);
